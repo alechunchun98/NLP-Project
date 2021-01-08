@@ -1,0 +1,228 @@
+---
+title: "Words distribution in Hotel reviews"
+author: "Alejandro Moreno Díaz"
+output:
+  pdf_document: default
+  html_document: default
+---
+## Introduction
+Hotel reviews are used by people to decide in which hotel they are going to stay in. These reviews help users to understand the positive and negative aspects of the hotel during their statement, so new customers who decide to stay, have an idea of how is going to be their experience. It also can help the staff of the hotel to solve the problems that customers have experienced before during their stay.
+
+Usually, the users use a rating system of 5 stars, being 5 the best experience in the hotel and 1 the worst. However, not all the reviews follow this system and there could be some rating that does not match the description given; for instance, a user who had a specific problem could give a 4-star rating but the other users who had the same problem gave a rating less than 3 stars. Also, some reviews are just the description without any kind of rating.
+
+To try to solve these problems it could be useful for analyzing the distribution of words in positive and negative reviews. Knowing the distributions could help identify outliers (for example, a positive review that most of the words are employed in negative reviews) and classify reviews without any kind of rating.
+
+
+## Setting the environment and loading the data
+
+### Check working directory
+```{r}
+getwd()
+```
+
+Be sure that the data.csv is in your working directory
+
+### Load Libraries
+```{r message=FALSE, warning=FALSE}
+library(tidyverse) # general utility & workflow functions
+library(tidytext) # tidy implimentation of NLP methods
+library(tm) # general text mining functions, making document term matrixes
+library(SnowballC) # for stemming
+library(wordcloud) # for making a wordcloud
+```
+
+### Load Data
+```{r}
+reviews <- read.csv("data.csv", header=TRUE, sep = "\t")
+df = separate(data = reviews, col = "Review....Rating", into = c("Review", "Rating"), sep =",  ,")
+```
+When loading the data, the separator can only be one command, so the separation in columns is with the separate function
+### Preprocessing data
+```{r}
+df <- na.omit(df) 
+
+df$Rating[df$Rating == 4] <- "positive"
+df$Rating[df$Rating == 5] <- "positive"
+df$Rating[df$Rating == 1] <- "negative"
+df$Rating[df$Rating == 2] <- "negative"
+
+extra = df[df$Rating ==3, ] 
+df<-df[!(df$Rating==3),]
+```
+The reviews with 4 or 5 stars are classified as positive and the reviews with 1 or 2 stars as negative. The reviews with 5 stars are dropped
+
+## Word distribution in reviews
+
+### Load Corpus
+```{r}
+corpus = Corpus(VectorSource(df$Review))
+DTM <- DocumentTermMatrix(corpus)
+```
+
+
+### Inspect Corpus
+```{r}
+length(corpus)
+inspect(corpus[1])
+```
+
+The text if the first review is displayed, in the PDF document can´t be seen well.
+
+```{r}
+meta(corpus[[1]])
+```
+```{r}
+dext = corpus[1]
+dext[[1]]$content[1]
+```
+```{r}
+dext = corpus[2]
+dext[[1]]$content[1]
+```
+
+
+### Create a general TDM
+```{r}
+customStopwords = c(stopwords(),"hotel","room")
+
+tdm = TermDocumentMatrix(corpus,
+                         control=list(stopwords = customStopwords,
+                                      removePunctuation = T, 
+                                      removeNumbers = T,
+                                      stemming = T))
+m <- as.matrix(tdm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+head(d, 10)
+```
+
+The dataframe shows the ABSOLUTE frequency each word appears counting all the reviews in the CSV
+
+```{r}
+tdm
+```
+
+### Graphs and visualization 
+```{r}
+par(bg="grey95")
+plot(sort(d$freq, decreasing = T),col="green",main="Word frequencies", xlab="Frequency-based rank", 
+     ylab = "Frequency")
+```
+
+The graph shows that the most used words are only a few comparing the whole number of words employed in the reviews
+```{r}
+set.seed(1234)
+wordcloud(words = d$word, freq = d$freq, min.freq = 500,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+```
+
+A wordcloud representing in bigger size the most used words.
+
+
+```{r}
+par(bg="grey95")
+barplot(d[1:15,]$freq, las = 2, names.arg = d[1:15,]$word, horiz=TRUE,
+        col ="grey30", main ="Term frequencies",
+        xlab = "Word frequencies")
+
+```
+
+This graph shows the most used words in all the reviews so we can remove for the future analysis the ones with doesnt have an influence in the Rating
+
+## Differential distribution between positive and negative reviews
+### Generating the corpus and tdm for positive and negative reviews
+```{r}
+df_pos = df[df$Rating =="positive", ]
+df_neg = df[df$Rating =="negative", ]
+pos_corpus = Corpus(VectorSource(df_pos$Review))
+neg_corpus = Corpus(VectorSource(df_neg$Review))
+
+length(pos_corpus)
+
+length(neg_corpus)
+```
+
+```{r}
+new_customStopwords = c(stopwords(),"hotel","room","stay","location","place")
+
+pos_tdm = TermDocumentMatrix(pos_corpus,
+                         control=list(stopwords = new_customStopwords,
+                                      removePunctuation = T, 
+                                      removeNumbers = T,
+                                      stemming = T))
+neg_tdm = TermDocumentMatrix(neg_corpus,
+                         control=list(stopwords = new_customStopwords,
+                                      removePunctuation = T, 
+                                      removeNumbers = T,
+                                      stemming = T))
+```
+The list of stopwords was extended and added to the new_customstopwords however, these words were not removed at he end. This problem has no effect in the comparison of the relative frequencies of the reviews.
+
+```{r}
+m <- as.matrix(pos_tdm)
+v <- sort(rowSums(m),decreasing=TRUE)
+v_pos = v/sum(v)
+d_pos <- data.frame(word = names(v),freq_pos=v_pos*100)
+head(d_pos,5)
+m <- as.matrix(neg_tdm)
+v <- sort(rowSums(m),decreasing=TRUE)
+v_neg = v/sum(v)
+d_neg <- data.frame(word = names(v),freq_neg=v_neg*100)
+head(d_neg,5)
+```
+
+The dataframe d_pos shows the relative frequency of each word appears counting all the positive reviews in the CSV. The dataframe d_neg shows the relative frequency each word appears counting all the negative reviews in the CSV. These proportions are in percentage.
+
+```{r}
+par(bg="grey95")
+barplot(d_pos[1:15,]$freq_pos, las = 2, names.arg = d_pos[1:15,]$word, horiz=TRUE,
+        col ="blue", main ="Most frequent positive words(%)",
+        xlab = "Word frequencies")
+```
+
+```{r}
+par(bg="grey95")
+barplot(d_neg[1:15,]$freq_neg, las = 2, names.arg = d_neg[1:15,]$word, horiz=TRUE,
+        col ="red", main ="Most frequent negative words(%)",
+        xlab = "Word frequencies")
+```
+
+There is a clear difference in the use of words in positive and negative reviews.
+
+```{r}
+df_prop = merge(d_pos,d_neg,by="word")
+
+df_prop <- transform(df_prop, rest= freq_pos - freq_neg)
+df_prop <- transform(df_prop, absrest= abs(freq_pos - freq_neg))
+rownames(df_prop) <- df_prop$word
+
+df_prop <-df_prop[order(-df_prop$absrest),]
+head(df_prop,20)
+```
+
+The dataframe df_prop contains the relative frequency in the percentage of the words in positive and negative reviews. The column rest is the difference between the proportion of a specific word between positive and negative. The column absrest contains the absolute values of the column rest.
+
+```{r}
+par(bg="grey95")
+barplot(df_prop[1:15,]$rest, las = 2, names.arg = df_prop[1:15,]$word, horiz=FALSE,
+        col=ifelse(df_prop[1:15,]$rest>0,"blue","red"),
+        main ="Biggest difference in proportion of words", 
+        ylim=c(-0.5,1.5),ylab = "Word frequencies")
+```
+
+The bars in blue are the ones that the proportion of positive use is greater than the negative. The red bars are the opposite case.
+Looking and the hugest bars, the words "great, nice, love, and friend" have usually a positive meaning so it makes sense they are used more in positive reviews. The word "night" could be used more in negative reviews because the customers of the hotel could have some trouble sleeping at night. To go further, it could be analyzed the usage of some expressions that employ these words, like "bad night"
+Given the dataframe df_prop and the last table, we can see the distribution of positive and negative reviews and which words differ in their relative frequency the most.
+
+## Conclusions and future projects
+
+During the analysis of positive and negative reviews, it is shown that the number of positive reviews is greater than the negative ones. The last graphs comparing the distribution between positive and negative reviews shows clearly that the usage of words in positive and negative hotel reviews are different.
+
+To improve the distribution of words it could be considered some of the stopwords like "should" that is saying that there is something to improve, so it will be strange that the review has a 5-star rating. Additionally, an association analysis could be done and see if the most used words have a negative word near(not, can´t, don´t, didn´t....), in this case, the word would have the opposite meaning.
+
+Calculating the a priori probabilities using the length of the positive and negative corpus, and the a posteriori probabilities that can be obtained from the dataframe df_prop; a simple Naive-Bayes classifier could be built. The data used in this project contains the first 3000 reviews from the original dataset, the rest of the dataset could be used to verify and improve the model. To go further, the reviews with a 3-star rating could be classified as positive and negative.
+
+
+
+
